@@ -14,11 +14,11 @@
 
 
 void procesoCliente(int sockfd, char* nombre){
-    char buffer[100];
+    char buffer[512];
     int n;
     struct sockaddr_in cliaddr;
     int len = sizeof(cliaddr);
-    for(;;){
+    while(1){
     	bzero(buffer, sizeof(buffer));
     	recvfrom(sockfd, buffer, sizeof(buffer), MSG_WAITALL, 
     		( struct sockaddr *) &cliaddr, &len); 
@@ -58,6 +58,7 @@ int main() {
     server_addr.sin_addr.s_addr=INADDR_ANY;
     server_addr.sin_port=htons(PORT);
 	printf("\nUDP Server: server socket binding...");
+    printf("Hola\n");
 	if (bind(socket_fd, (struct sockaddr *) &server_addr, sizeof(struct sockaddr)) == -1) {
     	perror("UDP Server: ERROR while binding the socket.\n");
     	exit(1);
@@ -67,7 +68,8 @@ int main() {
 	int pid; 
 	int n, j;
 	pid_t childpid;	
-	while (1) {
+    procesoCliente(socket_fd, recv_data);
+	/*while (1) {
     	printf("\nUDP Server: waiting for connection...\n");
     	bzero(recv_data,sizeof(recv_data));
     	int len;
@@ -95,7 +97,7 @@ int main() {
             	wait(NULL);
             }
         }
-    }
+    }*/
 	close(socket_fd);
 	exit(0);
 }
