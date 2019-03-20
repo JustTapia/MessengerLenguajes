@@ -7,90 +7,74 @@
 #include<arpa/inet.h>
 #include<netinet/in.h>
 #include<netdb.h>
+#include <sys/mman.h>
+#include <sys/types.h>
 #define PORT 23671
 #define PORT2 4444
 
 typedef struct clienteSocket {
-    struct sockaddr_in *cli;
-    struct clienteSocket* anterior;
-    struct clienteSocket* siguiente;
-    char nombre[16];
+    int desconectado;
+    unsigned short int puerto;
+    struct in_addr ip;
+    char *nombre;
 } clienteSocket;
 
 clienteSocket *newSocket(char* nombre, struct sockaddr_in *client) {
     clienteSocket *ptr = malloc(sizeof(clienteSocket));
-    ptr->cli = client;
-    ptr->anterior = NULL;
-    ptr->siguiente = NULL;
+    ptr->puerto = client.sin_port;
     strcpy(ptr->nombre, nombre);
     return ptr;
 }
-
-clienteSocket *servidorRaiz;
+ 
+static clienteSocket *clientes;
+static int *nClientes;
 socklen_t sin_size = sizeof(struct sockaddr);
 
-void  imprimirLista(clienteSocket  *SharedMem)
+void  imprimirLista(clienteSocket  **SharedMem, int n)
 {
      printf(" Lista: \n");
-     while(SharedMem != NULL){
-        printf("%s   %i\n",SharedMem->nombre, htons(SharedMem->cli->sin_port));
-        SharedMem = SharedMem->siguiente;
+     for(int i = 0; i <= n; i++){
+        printf("%s  %i\n",SharedMem[i]->nombre, SharedMem[i]->cli->sin_port);
     }
      printf("  Fin de lista\n");
 }
 
 char * buscarNombre(struct sockaddr_in * cli){
-    clienteSocket *temp = servidorRaiz;
-    while (temp != NULL) {
-        if (temp->cli == cli) {
+     for(int i = 0; i <= *nClientes; i++){
+        clienteSocket *temp = clientes[i];
+        if (temp->puerto == cli->sin_port) {
             return temp->nombre;
         }
-        temp = temp->siguiente;
     }
     return NULL;
 }
 
 int enviarMensaje(char *nombre, char *mensaje, int socket2, struct sockaddr_in * cli) {
-    char from[] = "From ";
     char *nombreFrom;
-    clienteSocket *temp = servidorRaiz->siguiente;
-    while (temp != NULL) {
+    struct sockaddr_in cliente2;
+    for(int i = 0; i <= *nClientes; i++){
+        clienteSocket temp = clientes[i];
         if (strcmp(nombre, temp->nombre)==0) {
             nombreFrom = buscarNombre(cli);
             if(nombreFrom == NULL){
-                printf("%s\n", "SI");
                 return 1;
             }
+            bzero(from,sizeof(from));
+            strcat(from, "From ");
             strcat(from, nombreFrom);
             strcat(from, ": ");
             strcat(from, mensaje);
-            sendto(socket2,from,strlen(from),MSG_CONFIRM,(struct sockaddr *)(temp->cli),sin_size);
+            strcat(from, "\0");
+            printf("%s\n", from);
+            cliente2.sin_family=AF_INET;
+            cliente2.sin_addr = temp->ip;
+            cliente2.sin_port = temp->puerto;
+            sendto(socket2,from,strlen(from),MSG_CONFIRM,(struct sockaddr *)&cliente2,sizeof(cliente2));
             return 0;
         }
-        temp = temp->siguiente;
     }
     return 1;
 }
-
-void clienteDesconectado(clienteSocket *socket){
-    if (socket->siguiente == NULL) {
-        socket->anterior->siguiente = NULL;
-    } else {
-        socket->anterior->siguiente = socket->siguiente;
-        socket->siguiente->anterior = socket->anterior;
-    }
-}
-
-void agregarCliente(char *nombre, struct sockaddr_in * cli){
-    clienteSocket *sckt = newSocket(nombre, cli);
-    clienteSocket *temp = servidorRaiz;
-    while (temp->siguiente != NULL) {
-        temp = temp->siguiente;
-    }
-    sckt->anterior = temp;
-    temp->siguiente = sckt;
-}
-
 
 int remitenteYmensaje(char *buffer, int socket2, struct sockaddr_in * cli){
     int i = 0;
@@ -116,18 +100,17 @@ int remitenteYmensaje(char *buffer, int socket2, struct sockaddr_in * cli){
 
 void procesoCliente(int socket2, char *nombre){
     char buff[100];
-    struct sockaddr_in cliente;
+    struct sockaddr_in cliente, cliente2;
     for(;;){
         bzero(buff,sizeof(buff));
         recvfrom(socket2,buff,sizeof(buff), 0,(struct sockaddr *)&cliente, &sin_size);
-        imprimirLista(servidorRaiz);
         int recibido = remitenteYmensaje(buff, socket2, &cliente);
         char mensaje[100];
         if(recibido!= 0){
-            strcpy(mensaje, "\nNo se puede enviar el mensaje\n");
+            strcpy(mensaje, "\nNo se puede enviar el mensaje\n\0");
             sendto(socket2,mensaje,sizeof(mensaje),0,(struct sockaddr *)&cliente,sin_size);
         }else{
-            strcpy(mensaje, "\nMensaje enviado\n");
+            strcpy(mensaje, "\nMensaje enviado\n\0");
             sendto(socket2,mensaje,sizeof(mensaje),0,(struct sockaddr *)&cliente,sin_size);
         }
     }
@@ -173,7 +156,13 @@ void main(int argc, char const *argv[])
     }
     printf("Socket2 successfully created..\n");
 
+    clientes = mmap(NULL, 100*sizeof(clienteSocket), PROT_READ | PROT_WRITE, 
+                    MAP_SHARED | MAP_ANONYMOUS, -1, 0);
+    nClientes = mmap(NULL, sizeof(*nClientes), PROT_READ | PROT_WRITE, 
+                   MAP_SHARED | MAP_ANONYMOUS, -1, 0);
+    *nClientes = 0;
     servidorRaiz = newSocket("servidor", &servaddr2);
+    clientes[*nClientes]= servidorRaiz;
     printf("\nUDP Server: done binding.");
     pid_t pid;
     int n;
@@ -182,8 +171,9 @@ void main(int argc, char const *argv[])
         recvfrom(socket1,buff,sizeof(buff),0,(struct sockaddr *)&cliente, &sin_size);
         printf("\nConectando con %s:%d\n", inet_ntoa(cliente.sin_addr),htons(cliente.sin_port));
         printf("%s\n", buff);
-        agregarCliente(buff, &cliente);
-        printf("%d\n", cliente.sin_port);
+        (*nClientes)++;
+        clienteSocket *c = newSocket(buff, &cliente);
+        clientes[*nClientes]= c;
         pid = fork();
         if(pid<0){
             printf("%s\n", "ERROR forking");
@@ -196,7 +186,4 @@ void main(int argc, char const *argv[])
     close(socket2);
     exit(0);
 }
-
-
-
 
