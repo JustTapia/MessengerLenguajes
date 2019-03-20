@@ -33,6 +33,7 @@ int enviarMensajes(int conexion, struct sockaddr_in *servaddr) {
     while(1){
         n=0;
         while ((mensaje[n++] = getchar()) != '\n');
+        *(mensaje +n -1) = '\0';
         sendto(conexion,mensaje,sizeof(mensaje),0,(struct sockaddr *) servaddr,sin_size);
         if ((strncmp(mensaje, "exit", 4)) == 0) { 
             printf("Client Exit...\n"); 
