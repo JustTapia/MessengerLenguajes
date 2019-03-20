@@ -19,42 +19,50 @@ typedef struct clienteSocket {
     char *nombre;
 } clienteSocket;
 
-clienteSocket *newSocket(char* nombre, struct sockaddr_in *client) {
-    clienteSocket *ptr = malloc(sizeof(clienteSocket));
-    ptr->puerto = client.sin_port;
-    strcpy(ptr->nombre, nombre);
-    return ptr;
-}
- 
+clienteSocket servidorRaiz;
 static clienteSocket *clientes;
-static int *nClientes;
+static int *nClientes; 
+static char *nombres;
 socklen_t sin_size = sizeof(struct sockaddr);
 
-void  imprimirLista(clienteSocket  **SharedMem, int n)
+clienteSocket newSocket(char *nombre, struct sockaddr_in *client) {
+    strncpy(nombres + (*nClientes * 16), nombre, 16);
+    clienteSocket ptr = {0, client->sin_port, client->sin_addr, nombres + (*nClientes * 16)};//malloc(sizeof(clienteSocket));
+    printf("%s\n", ptr.nombre);
+    return ptr;
+}
+
+
+
+void  imprimirLista()
 {
      printf(" Lista: \n");
-     for(int i = 0; i <= n; i++){
-        printf("%s  %i\n",SharedMem[i]->nombre, SharedMem[i]->cli->sin_port);
+     for(int i = 0; i <= *nClientes; i++){
+        printf("%s  %i\n",clientes[i].nombre, htons(clientes[i].puerto));
     }
      printf("  Fin de lista\n");
 }
 
-char * buscarNombre(struct sockaddr_in * cli){
-     for(int i = 0; i <= *nClientes; i++){
-        clienteSocket *temp = clientes[i];
-        if (temp->puerto == cli->sin_port) {
-            return temp->nombre;
+char * buscarNombre(struct sockaddr_in  *cli){
+    for(int i = 0; i <= *nClientes; i++){
+        clienteSocket temp = clientes[i];
+        if (temp.puerto == cli->sin_port) {
+            return temp.nombre;
         }
     }
     return NULL;
 }
 
 int enviarMensaje(char *nombre, char *mensaje, int socket2, struct sockaddr_in * cli) {
+    char from[100];
     char *nombreFrom;
     struct sockaddr_in cliente2;
     for(int i = 0; i <= *nClientes; i++){
         clienteSocket temp = clientes[i];
-        if (strcmp(nombre, temp->nombre)==0) {
+        if (strcmp(nombre, temp.nombre)==0) {
+            if(temp.desconectado == 1){
+                return 1;
+            }
             nombreFrom = buscarNombre(cli);
             if(nombreFrom == NULL){
                 return 1;
@@ -65,16 +73,16 @@ int enviarMensaje(char *nombre, char *mensaje, int socket2, struct sockaddr_in *
             strcat(from, ": ");
             strcat(from, mensaje);
             strcat(from, "\0");
-            printf("%s\n", from);
             cliente2.sin_family=AF_INET;
-            cliente2.sin_addr = temp->ip;
-            cliente2.sin_port = temp->puerto;
+            cliente2.sin_addr = temp.ip;
+            cliente2.sin_port = temp.puerto;
             sendto(socket2,from,strlen(from),MSG_CONFIRM,(struct sockaddr *)&cliente2,sizeof(cliente2));
             return 0;
         }
     }
     return 1;
 }
+
 
 int remitenteYmensaje(char *buffer, int socket2, struct sockaddr_in * cli){
     int i = 0;
@@ -97,20 +105,47 @@ int remitenteYmensaje(char *buffer, int socket2, struct sockaddr_in * cli){
     return enviarMensaje(nombre, mensaje, socket2, cli);
 }
 
+void cambiarPuerto(char *buffer, struct sockaddr_in * cli){
+    clienteSocket temp;
+    for(int i = 0; i <= *nClientes; i++){
+        temp = clientes[i];
+        if (temp.puerto == cli->sin_port) {
+            break;
+        }
+    }
+    temp.puerto = atoi(buffer);
+}
+
+void desconectarUsuario(char *buffer, struct sockaddr_in * cli){
+    clienteSocket temp;
+    for(int i = 0; i <= *nClientes; i++){
+        temp = clientes[i];
+        if (temp.puerto == cli->sin_port) {
+            break;
+        }
+    }
+    temp.desconectado = 1;
+    printf("%s\n%d\n", temp.nombre, temp.puerto);
+}
 
 void procesoCliente(int socket2, char *nombre){
     char buff[100];
     struct sockaddr_in cliente, cliente2;
     for(;;){
+        int recibido = 0;
         bzero(buff,sizeof(buff));
         recvfrom(socket2,buff,sizeof(buff), 0,(struct sockaddr *)&cliente, &sin_size);
-        int recibido = remitenteYmensaje(buff, socket2, &cliente);
+        //imprimirLista();
+        if(strncmp(buff, "Puerto", 6) == 0){
+            cambiarPuerto(buff, &cliente);
+        }else if(strncmp(buff, "exit", 4) == 0){
+            desconectarUsuario(buff, &cliente);
+        }else{
+            recibido = remitenteYmensaje(buff, socket2, &cliente);
+        }
         char mensaje[100];
         if(recibido!= 0){
             strcpy(mensaje, "\nNo se puede enviar el mensaje\n\0");
-            sendto(socket2,mensaje,sizeof(mensaje),0,(struct sockaddr *)&cliente,sin_size);
-        }else{
-            strcpy(mensaje, "\nMensaje enviado\n\0");
             sendto(socket2,mensaje,sizeof(mensaje),0,(struct sockaddr *)&cliente,sin_size);
         }
     }
@@ -160,6 +195,8 @@ void main(int argc, char const *argv[])
                     MAP_SHARED | MAP_ANONYMOUS, -1, 0);
     nClientes = mmap(NULL, sizeof(*nClientes), PROT_READ | PROT_WRITE, 
                    MAP_SHARED | MAP_ANONYMOUS, -1, 0);
+    nombres = mmap(NULL, sizeof(char)*1600, PROT_READ | PROT_WRITE, 
+                   MAP_SHARED | MAP_ANONYMOUS, -1, 0);
     *nClientes = 0;
     servidorRaiz = newSocket("servidor", &servaddr2);
     clientes[*nClientes]= servidorRaiz;
@@ -172,7 +209,7 @@ void main(int argc, char const *argv[])
         printf("\nConectando con %s:%d\n", inet_ntoa(cliente.sin_addr),htons(cliente.sin_port));
         printf("%s\n", buff);
         (*nClientes)++;
-        clienteSocket *c = newSocket(buff, &cliente);
+        clienteSocket c = newSocket(buff, &cliente);
         clientes[*nClientes]= c;
         pid = fork();
         if(pid<0){
@@ -186,4 +223,3 @@ void main(int argc, char const *argv[])
     close(socket2);
     exit(0);
 }
-
