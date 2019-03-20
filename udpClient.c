@@ -16,7 +16,10 @@ void recibirMensajes(int conexion, struct sockaddr_in *servaddr) {
     while (1) {
         int recibir = recvfrom(conexion,mensaje,sizeof(mensaje),0,(struct sockaddr *)servaddr, &sin_size);
         if(recibir > 0){
-            printf("%s\n", mensaje);
+            printf("\033[0;32m");   
+            printf("%s", mensaje);
+            printf("\e[0m");
+            printf("\n");
         }
         else if (recibir == 0){
             break;
