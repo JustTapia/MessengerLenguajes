@@ -11,42 +11,6 @@
 
 socklen_t sin_size = sizeof(struct sockaddr);
 
-void recibirMensajes(int conexion, struct sockaddr_in *servaddr) {
-    char mensaje[100];
-    while (1) {
-        int recibir = recvfrom(conexion,mensaje,sizeof(mensaje),0,(struct sockaddr *)servaddr, &sin_size);
-        if(recibir > 0){
-            printf("\033[0;32m");   
-            printf("%s", mensaje);
-            printf("\e[0m");
-            printf("\n");
-        }
-        else if (recibir == 0){
-            break;
-        }
-        bzero(mensaje, sizeof(mensaje));
-    }
-}
-
-int enviarMensajes(int conexion, struct sockaddr_in *servaddr) {
-    int n;
-    //bool salir;
-    char mensaje[100];
-    while(1){
-        n=0;
-        while ((mensaje[n++] = getchar()) != '\n');
-        *(mensaje +n -1) = '\0';
-        if( strncmp(mensaje, "Puerto", n) == 0){ // cambiar puerto, comando -p
-            cambiarPuerto(mensaje, conexion, servaddr);
-        }else{
-            sendto(conexion,mensaje,sizeof(mensaje),0,(struct sockaddr *) servaddr,sin_size);
-            if ((strncmp(mensaje, "exit", 4)) == 0) { 
-                printf("Muchas gracias por usar nuestro sistema!\n"); 
-                return 0;
-            }
-        }
-    }
-}
 void cambiarPuerto(char *mensaje, int conexion, struct sockaddr_in *servaddr){
     char archtext[64];
     int i = 0, j = 0;
@@ -80,8 +44,48 @@ void cambiarPuerto(char *mensaje, int conexion, struct sockaddr_in *servaddr){
     printf("Puerto cambiado!\n");
 }
 
+void recibirMensajes(int conexion, struct sockaddr_in *servaddr) {
+    char mensaje[100];
+    while (1) {
+        int recibir = recvfrom(conexion,mensaje,sizeof(mensaje),0,(struct sockaddr *)servaddr, &sin_size);
+        if(recibir > 0){
+            if(strncmp(mensaje, "exit", 4) ==0){
+                exit(0);
+            }
+            printf("\033[0;32m");   
+            printf("%s", mensaje);
+            printf("\e[0m");
+            printf("\n");
+        }
+        else if (recibir == 0){
+            break;
+        }
+        bzero(mensaje, sizeof(mensaje));
+    }
+}
+
+int enviarMensajes(int conexion, struct sockaddr_in *servaddr) {
+    int n;
+    char mensaje[100];
+    while(1){
+        n=0;
+        while ((mensaje[n++] = getchar()) != '\n');
+        *(mensaje +n -1) = '\0';
+        if( strncmp(mensaje, "Puerto", n) == 0){ // cambiar puerto, comando -p
+            cambiarPuerto(mensaje, conexion, servaddr);
+        }else{
+            sendto(conexion,mensaje,sizeof(mensaje),0,(struct sockaddr *) servaddr,sin_size);
+            if ((strncmp(mensaje, "exit", 4)) == 0) { 
+                printf("Muchas gracias por usar nuestro sistema!\n");
+                close(conexion);
+                exit(0);
+            }
+        }
+    }
+}
+
 int main(){
-    char tmp, ip[15], sPuerto[5], nombre[16], PORT[6], PORT2[6];
+    char tmp, ip[15], sPuerto[5], nombre[16], PORT[6], PORT2[6], sn[3];
     int i = -1, j = 0;
     FILE *archivo = fopen("arch.conf", "r");
     while(j<4){
@@ -126,46 +130,62 @@ int main(){
     }
     *(nombre+i)='\0';
 
+    printf("Desea cambiar su número de puerto? s/n\n");
+
+    i = -1;
+    while( *(sn + i) != '\n'){
+        i++;
+        scanf("%c", sn + i);
+    }
+    *(sn + i) = '\0';
+    if (*sn == 's'){
+        i = -1;
+        printf("\nPor favor escriba el puerto que desea\n");
+        while(*(sPuerto+i)!=10){
+            i++;
+            scanf("%c", sPuerto+i);
+        }
+        *(sPuerto+i)='\0';
+    } 
+
     int sockfd;
     struct sockaddr_in servaddr, cliente, servaddr2;
-    while(1){
-        if ((sockfd = socket(AF_INET, SOCK_DGRAM, 0)) == -1) {
+
+    if ((sockfd = socket(AF_INET, SOCK_DGRAM, 0)) == -1) {
         perror("UDP Client: ERROR while creating the socket.\n");
         exit(1);
-        }
-        bzero(&servaddr,sizeof(struct sockaddr));
-        servaddr.sin_family=AF_INET;
-        servaddr.sin_addr.s_addr= INADDR_ANY; //inet_addr("127.0.0.1");
-        servaddr.sin_port=htons(atoi(PORT));
+    }
+    bzero(&servaddr,sizeof(struct sockaddr));
+    servaddr.sin_family=AF_INET;
+    servaddr.sin_addr.s_addr= INADDR_ANY; //inet_addr("127.0.0.1");
+    servaddr.sin_port=htons(atoi(PORT));
 
-        bzero(&servaddr2,sizeof(struct sockaddr));
-        servaddr2.sin_family=AF_INET;
-        servaddr2.sin_addr.s_addr= INADDR_ANY; //inet_addr("127.0.0.1");
-        servaddr2.sin_port=htons(atoi(PORT2));
+    bzero(&servaddr2,sizeof(struct sockaddr));
+    servaddr2.sin_family=AF_INET;
+    servaddr2.sin_addr.s_addr= INADDR_ANY; //inet_addr("127.0.0.1");
+    servaddr2.sin_port=htons(atoi(PORT2));
         
-        bzero(&cliente,sizeof(struct sockaddr));
-        cliente.sin_family=AF_INET;
-        cliente.sin_addr.s_addr=INADDR_ANY;
-        cliente.sin_port=htons(atoi(sPuerto));
-        if((bind(sockfd,(struct sockaddr *)&cliente,sizeof(cliente)))!=0){
-            printf("client socket bind failed...\n");
-            exit(0);
-        }
-        printf("Conectado con %s:%d\n",inet_ntoa(servaddr.sin_addr),htons(servaddr.sin_port));
-        sendto(sockfd, nombre,sizeof(nombre),0,(struct sockaddr *)&servaddr,sin_size);
-        pid_t childpid;
-        for(;;){
-            if((childpid = fork()) == 0){
-                recibirMensajes(sockfd, &servaddr2);
-            }
-            if(enviarMensajes(sockfd, &servaddr2) == 0){
-                exit(0);
-            }else{
-                break;
-            }
-        }
-        close(sockfd);
+    bzero(&cliente,sizeof(struct sockaddr));
+    cliente.sin_family=AF_INET;
+    cliente.sin_addr.s_addr=INADDR_ANY;
+    cliente.sin_port=htons(atoi(sPuerto));
+    if((bind(sockfd,(struct sockaddr *)&cliente,sizeof(cliente)))!=0){
+        printf("client socket bind failed...\n");
         exit(0);
     }
-    //close(sockfd);
+    printf("Conectado con %s:%d\n",inet_ntoa(servaddr.sin_addr),htons(servaddr.sin_port));
+    sendto(sockfd, nombre,sizeof(nombre),0,(struct sockaddr *)&servaddr,sin_size);
+    pid_t childpid;
+    for(;;){
+        if((childpid = fork()) == 0){
+            recibirMensajes(sockfd, &servaddr2);
+        }
+        if(enviarMensajes(sockfd, &servaddr2) == 0){
+            exit(0);
+        }else{
+            break;
+        }
+    }
+    close(sockfd);
+    exit(0);
 }

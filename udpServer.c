@@ -1,6 +1,7 @@
 #include<stdio.h>
 #include<string.h>
 #include<stdlib.h>
+#include<stdint.h>
 #include<unistd.h>
 #include<sys/socket.h>
 #include<sys/wait.h>
@@ -13,8 +14,8 @@
 #define PORT2 4444
 
 typedef struct clienteSocket {
-    int desconectado;
-    unsigned short int puerto;
+    int conectado;
+    int puerto;
     struct in_addr ip;
     char *nombre;
 } clienteSocket;
@@ -27,8 +28,7 @@ socklen_t sin_size = sizeof(struct sockaddr);
 
 clienteSocket newSocket(char *nombre, struct sockaddr_in *client) {
     strncpy(nombres + (*nClientes * 16), nombre, 16);
-    clienteSocket ptr = {0, client->sin_port, client->sin_addr, nombres + (*nClientes * 16)};//malloc(sizeof(clienteSocket));
-    printf("%s\n", ptr.nombre);
+    clienteSocket ptr = {1, client->sin_port, client->sin_addr, nombres + (*nClientes * 16)};//malloc(sizeof(clienteSocket));
     return ptr;
 }
 
@@ -56,18 +56,19 @@ char * buscarNombre(struct sockaddr_in  *cli){
 int enviarMensaje(char *nombre, char *mensaje, int socket2, struct sockaddr_in * cli) {
     char from[100];
     char *nombreFrom;
+    bzero(from, sizeof(from));
     struct sockaddr_in cliente2;
     for(int i = 0; i <= *nClientes; i++){
         clienteSocket temp = clientes[i];
-        if (strcmp(nombre, temp.nombre)==0) {
-            if(temp.desconectado == 1){
+        if (strcmp(nombre, temp.nombre) == 0) {
+        	printf("%d\n", temp.conectado);
+            if(temp.conectado == 0){
                 return 1;
             }
             nombreFrom = buscarNombre(cli);
             if(nombreFrom == NULL){
                 return 1;
             }
-            bzero(from,sizeof(from));
             strcat(from, "From ");
             strcat(from, nombreFrom);
             strcat(from, ": ");
@@ -83,6 +84,16 @@ int enviarMensaje(char *nombre, char *mensaje, int socket2, struct sockaddr_in *
     return 1;
 }
 
+void cambiarPuerto(char *buffer, struct sockaddr_in * cli){
+    clienteSocket temp;
+    for(int i = 0; i <= *nClientes; i++){
+        temp = clientes[i];
+        if (temp.puerto == cli->sin_port) {
+            break;
+        }
+    }
+    temp.puerto = atoi(buffer);
+}
 
 int remitenteYmensaje(char *buffer, int socket2, struct sockaddr_in * cli){
     int i = 0;
@@ -105,27 +116,21 @@ int remitenteYmensaje(char *buffer, int socket2, struct sockaddr_in * cli){
     return enviarMensaje(nombre, mensaje, socket2, cli);
 }
 
-void cambiarPuerto(char *buffer, struct sockaddr_in * cli){
+void desconectarUsuario(char *buffer, int socket2, struct sockaddr_in * cli){
     clienteSocket temp;
+    struct sockaddr_in cliente2;
     for(int i = 0; i <= *nClientes; i++){
         temp = clientes[i];
         if (temp.puerto == cli->sin_port) {
             break;
         }
     }
-    temp.puerto = atoi(buffer);
-}
-
-void desconectarUsuario(char *buffer, struct sockaddr_in * cli){
-    clienteSocket temp;
-    for(int i = 0; i <= *nClientes; i++){
-        temp = clientes[i];
-        if (temp.puerto == cli->sin_port) {
-            break;
-        }
-    }
-    temp.desconectado = 1;
-    printf("%s\n%d\n", temp.nombre, temp.puerto);
+    bzero(&temp.conectado , sizeof(int));
+    cliente2.sin_family=AF_INET;
+    cliente2.sin_addr = temp.ip;
+    cliente2.sin_port = temp.puerto;
+    sendto(socket2,"exit",4,MSG_CONFIRM,(struct sockaddr *)&cliente2,sizeof(cliente2));
+    exit(1);
 }
 
 void procesoCliente(int socket2, char *nombre){
@@ -139,7 +144,7 @@ void procesoCliente(int socket2, char *nombre){
         if(strncmp(buff, "Puerto", 6) == 0){
             cambiarPuerto(buff, &cliente);
         }else if(strncmp(buff, "exit", 4) == 0){
-            desconectarUsuario(buff, &cliente);
+            desconectarUsuario(buff, socket2, &cliente);
         }else{
             recibido = remitenteYmensaje(buff, socket2, &cliente);
         }
@@ -151,13 +156,15 @@ void procesoCliente(int socket2, char *nombre){
     }
 }
 
-void main(int argc, char const *argv[])
-{
+void main(int argc, char const *argv[]){
+
     struct sockaddr_in servaddr, cliente, servaddr2;
     int bytes_read;
     char buff[100];
     int socket1, socket2;
-    
+    bzero(&servaddr, sizeof(servaddr));
+    bzero(&cliente, sizeof(cliente));
+    bzero(&servaddr2, sizeof(servaddr2));
     if ((socket1 = socket(AF_INET, SOCK_DGRAM, 0)) == -1) {
         perror("UDP Server: ERROR creating the socket.\n");
         exit(1);
@@ -197,6 +204,9 @@ void main(int argc, char const *argv[])
                    MAP_SHARED | MAP_ANONYMOUS, -1, 0);
     nombres = mmap(NULL, sizeof(char)*1600, PROT_READ | PROT_WRITE, 
                    MAP_SHARED | MAP_ANONYMOUS, -1, 0);
+    bzero(clientes,100*sizeof(clienteSocket));
+    bzero(clientes,sizeof(*nClientes));
+    bzero(clientes,1600*sizeof(char));
     *nClientes = 0;
     servidorRaiz = newSocket("servidor", &servaddr2);
     clientes[*nClientes]= servidorRaiz;
