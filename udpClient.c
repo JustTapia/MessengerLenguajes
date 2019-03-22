@@ -71,15 +71,11 @@ int enviarMensajes(int conexion, struct sockaddr_in *servaddr) {
         n=0;
         while ((mensaje[n++] = getchar()) != '\n');
         *(mensaje +n -1) = '\0';
-        if( strncmp(mensaje, "Puerto", n) == 0){ // cambiar puerto, comando -p
-            cambiarPuerto(mensaje, conexion, servaddr);
-        }else{
-            sendto(conexion,mensaje,sizeof(mensaje),0,(struct sockaddr *) servaddr,sin_size);
-            if ((strncmp(mensaje, "exit", 4)) == 0) { 
-                printf("Muchas gracias por usar nuestro sistema!\n");
-                close(conexion);
-                exit(0);
-            }
+        sendto(conexion,mensaje,sizeof(mensaje),0,(struct sockaddr *) servaddr,sin_size);
+        if ((strncmp(mensaje, "exit", 4)) == 0) { 
+        	printf("Muchas gracias por usar nuestro sistema!\n");
+        	close(conexion);
+        	exit(0);
         }
     }
 }
@@ -157,12 +153,12 @@ int main(){
     }
     bzero(&servaddr,sizeof(struct sockaddr));
     servaddr.sin_family=AF_INET;
-    servaddr.sin_addr.s_addr= INADDR_ANY; //inet_addr("127.0.0.1");
+    servaddr.sin_addr.s_addr= inet_addr(ip);
     servaddr.sin_port=htons(atoi(PORT));
 
     bzero(&servaddr2,sizeof(struct sockaddr));
     servaddr2.sin_family=AF_INET;
-    servaddr2.sin_addr.s_addr= INADDR_ANY; //inet_addr("127.0.0.1");
+    servaddr2.sin_addr.s_addr= inet_addr(ip);
     servaddr2.sin_port=htons(atoi(PORT2));
         
     bzero(&cliente,sizeof(struct sockaddr));
